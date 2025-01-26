@@ -1,91 +1,95 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import useDebounce from "../hooks/useDebounce";
+import { 
+  SearchHeader,
+  LoadingSpinner,
+  ErrorMessage,
+  AdvocatesTable,
+  PaginationControls
+} from "../components";
+import { Advocate, Pagination } from "../lib/types";
 
 export default function Home() {
-  const [advocates, setAdvocates] = useState([]);
-  const [filteredAdvocates, setFilteredAdvocates] = useState([]);
+  const [advocates, setAdvocates] = useState<Advocate[]>([]);
+  const [filteredAdvocates, setFilteredAdvocates] = useState<Advocate[]>([]);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [pagination, setPagination] = useState<Pagination>({
+    currentPage: 1,
+    totalPages: 1,
+    totalItems: 0,
+  });
 
-  useEffect(() => {
-    console.log("fetching advocates...");
-    fetch("/api/advocates").then((response) => {
-      response.json().then((jsonResponse) => {
-        setAdvocates(jsonResponse.data);
-        setFilteredAdvocates(jsonResponse.data);
-      });
-    });
-  }, []);
+  const debouncedSearchTerm = useDebounce(searchTerm, 300);
 
-  const onChange = (e) => {
-    const searchTerm = e.target.value;
-
-    document.getElementById("search-term").innerHTML = searchTerm;
-
-    console.log("filtering advocates...");
-    const filteredAdvocates = advocates.filter((advocate) => {
-      return (
-        advocate.firstName.includes(searchTerm) ||
-        advocate.lastName.includes(searchTerm) ||
-        advocate.city.includes(searchTerm) ||
-        advocate.degree.includes(searchTerm) ||
-        advocate.specialties.includes(searchTerm) ||
-        advocate.yearsOfExperience.includes(searchTerm)
+  const fetchData = async (page = 1, search = "") => {
+    try {
+      setIsLoading(true);
+      const response = await fetch(
+        `/api/advocates?page=${page}&search=${encodeURIComponent(search)}`
       );
-    });
+      
+      if (!response.ok) {
+        throw new Error("Failed to fetch data");
+      }
 
-    setFilteredAdvocates(filteredAdvocates);
+      const { data = [], meta } = await response.json();
+      
+      setAdvocates(data);
+      setFilteredAdvocates(data);
+      setPagination({
+        currentPage: meta?.currentPage || 1,
+        totalPages: meta?.totalPages || 1,
+        totalItems: meta?.totalItems || 0,
+      });
+    } catch (error) {
+      setError("Failed to load advocates. Please try again later.");
+      setFilteredAdvocates([]);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const onClick = () => {
-    console.log(advocates);
-    setFilteredAdvocates(advocates);
+  useEffect(() => {
+    fetchData();
+  }, []);
+
+  useEffect(() => {
+    if (debouncedSearchTerm) {
+      fetchData(1, debouncedSearchTerm);
+    }
+  }, [debouncedSearchTerm]);
+
+  const handlePageChange = (page: number) => {
+    fetchData(page, searchTerm);
   };
 
   return (
-    <main style={{ margin: "24px" }}>
-      <h1>Solace Advocates</h1>
-      <br />
-      <br />
-      <div>
-        <p>Search</p>
-        <p>
-          Searching for: <span id="search-term"></span>
-        </p>
-        <input style={{ border: "1px solid black" }} onChange={onChange} />
-        <button onClick={onClick}>Reset Search</button>
-      </div>
-      <br />
-      <br />
-      <table>
-        <thead>
-          <th>First Name</th>
-          <th>Last Name</th>
-          <th>City</th>
-          <th>Degree</th>
-          <th>Specialties</th>
-          <th>Years of Experience</th>
-          <th>Phone Number</th>
-        </thead>
-        <tbody>
-          {filteredAdvocates.map((advocate) => {
-            return (
-              <tr>
-                <td>{advocate.firstName}</td>
-                <td>{advocate.lastName}</td>
-                <td>{advocate.city}</td>
-                <td>{advocate.degree}</td>
-                <td>
-                  {advocate.specialties.map((s) => (
-                    <div>{s}</div>
-                  ))}
-                </td>
-                <td>{advocate.yearsOfExperience}</td>
-                <td>{advocate.phoneNumber}</td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+    <main className="container mx-auto p-6">
+      <h1 className="text-4xl font-bold text-slate-800 mb-8">Solace Advocates</h1>
+      
+      <SearchHeader
+        searchValue={searchTerm}
+        onSearch={(value: string) => setSearchTerm(value)}
+        isLoading={isLoading}
+      />
+
+      {isLoading ? (
+        <LoadingSpinner />
+      ) : error ? (
+        <ErrorMessage message={error} />
+      ) : (
+        <AdvocatesTable advocates={filteredAdvocates} isLoading={isLoading} />
+      )}
+
+      <PaginationControls
+        pagination={pagination}
+        filteredCount={filteredAdvocates?.length || 0}
+        onPageChange={handlePageChange}
+      />
     </main>
   );
 }
